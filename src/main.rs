@@ -46,6 +46,8 @@ impl client::EventHandler for Handler {
 }
 
 // MODERATION COMMANDS
+
+// KICK
 #[poise::command(
     slash_command,
     prefix_command,
@@ -62,28 +64,19 @@ async fn kick(
     #[rest]
     reason: String,
 ) -> Result<(), utils::utils::Error> {
-    let db = ctx.data().mongo.clone();
-    let client_ref: &MongoClient = db.as_ref();
-    let db_ref = client_ref.database("crabby");
-    let collection: Collection<Document> = db_ref.collection("ModNotes");
-    let current_time = Utc::now();
-    let user_info = format!("{}", user.tag());
-    let mod_info = format!("{}", ctx.author().tag());
-    let reason_str = reason.to_string();
-
-    let document = doc! {
-        "type": "KICK",
-        "user": user_info,
-        "reason": reason_str,
-        "at": current_time.to_rfc3339(),
-        "responsible_mod": mod_info,
-    };
-    collection.insert_one(document, None).await?;
-
-    let guild = ctx.guild().context("Failed to fetch guild")?.clone();
-    guild.kick_with_reason(ctx.http(), &user, &reason).await?;
-    ctx.say(format!("**Kicked** user {}. Reason: {}", &user, &reason))
-        .await?;
+    if ctx.author() != &user {
+        create_mod_action_in_database(
+            "KICK".to_string(),
+            user.clone(),
+            reason.clone(),
+            ctx.clone(),
+        )
+        .await;
+        let guild = ctx.guild().context("Failed to fetch guild")?.clone();
+        guild.kick_with_reason(ctx.http(), &user, &reason).await?;
+        ctx.say(format!("**Kicked** user {}. Reason: {}", &user, &reason))
+            .await?;
+    }
     Ok(())
 }
 
@@ -92,6 +85,90 @@ fn help_kick() -> String {
         "\
 Example usage:
 uwu kick @<mention> <reason>",
+    )
+}
+
+// BAN
+#[poise::command(
+    slash_command,
+    prefix_command,
+    help_text_fn = "help_ban",
+    guild_only,
+    required_permissions = "BAN_MEMBERS"
+)]
+async fn ban(
+    ctx: utils::utils::Context<'_>,
+    #[description = "Offendor"]
+    #[rename = "criminal"]
+    user: User,
+    #[description = "Should I delete their recent messages?"]
+    #[rename = "delete"]
+    #[flag]
+    delete_messages: bool,
+    #[description = "Reason?"]
+    #[rest]
+    reason: String,
+) -> Result<(), utils::utils::Error> {
+    if ctx.author() != &user {
+        create_mod_action_in_database("BAN".to_string(), user.clone(), reason.clone(), ctx.clone())
+            .await;
+        let guild = ctx.guild().context("Failed to fetch guild")?.clone();
+        guild
+            .ban_with_reason(
+                ctx.http(),
+                &user,
+                if delete_messages { 1 } else { 0 },
+                &reason,
+            )
+            .await?;
+        ctx.say(format!("**Banned** user {}. Reason: {}", &user, &reason))
+            .await?;
+    }
+    Ok(())
+}
+
+fn help_ban() -> String {
+    String::from(
+        "\
+Example usage:
+uwu ban @<mention> <reason>",
+    )
+}
+
+// UNBAN
+#[poise::command(
+    slash_command,
+    prefix_command,
+    help_text_fn = "help_unban",
+    guild_only,
+    required_permissions = "BAN_MEMBERS"
+)]
+async fn unban(
+    ctx: utils::utils::Context<'_>,
+    #[description = "Rehabed person?"]
+    #[rename = "good_person"]
+    user: User,
+) -> Result<(), utils::utils::Error> {
+    if ctx.author() != &user {
+        create_mod_action_in_database(
+            "UNBAN".to_string(),
+            user.clone(),
+            "Unbanned".to_string(),
+            ctx.clone(),
+        )
+        .await;
+        let guild = ctx.guild().context("Failed to fetch guild")?.to_owned();
+        guild.unban(ctx.http(), user.id).await?;
+        ctx.say(format!("**Unbanned** {}", user.id)).await?;
+    }
+    Ok(())
+}
+
+fn help_unban() -> String {
+    String::from(
+        "\
+Example usage:
+uwu unban <userid>",
     )
 }
 
@@ -174,7 +251,7 @@ async fn main() {
 
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
-            commands: vec![age(), randomanime(), kick()],
+            commands: vec![age(), randomanime(), kick(), ban(), unban()],
             prefix_options: poise::PrefixFrameworkOptions {
                 prefix: Some("uwu".into()),
                 case_insensitive_commands: true,
@@ -204,4 +281,30 @@ async fn main() {
         .await;
 
     client.unwrap().start().await.unwrap();
+}
+
+async fn create_mod_action_in_database(
+    action: String,
+    user: User,
+    reason: String,
+    ctx: utils::utils::Context<'_>,
+) {
+    let db = ctx.data().mongo.clone();
+    let client_ref: &MongoClient = db.as_ref();
+    let db_ref = client_ref.database("crabby");
+    let collection: Collection<Document> = db_ref.collection("ModNotes");
+    let current_time = Utc::now();
+    let user_info = format!("{}", user.tag());
+    let mod_info = format!("{}", ctx.author().tag());
+    let reason_str = reason.to_string();
+
+    let document = doc! {
+        "type": action,
+        "user": user_info,
+        "reason": reason_str,
+        "at": current_time.to_rfc3339(),
+        "responsible_mod": mod_info,
+    };
+
+    let _ = collection.insert_one(document, None).await;
 }
