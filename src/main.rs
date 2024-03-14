@@ -1,9 +1,13 @@
+use anyhow::Context;
 use dotenv::dotenv;
 mod utils {
     pub mod utils; // Import from the utils.rs file
 }
 use poise::async_trait;
 use poise::serenity_prelude as serenity;
+use poise::serenity_prelude::User;
+use std::any::type_name;
+
 use reqwest::Client;
 use serde_json::Value;
 use serenity::all::OnlineStatus;
@@ -11,8 +15,17 @@ use serenity::builder::CreateEmbed;
 use serenity::model::colour::Colour;
 use serenity::model::gateway::GatewayIntents;
 use serenity::model::gateway::Ready;
-
+use std::sync::Arc;
+use poise::builtins;
 use serenity::client;
+use poise::serenity_prelude::prelude::TypeMapKey;
+use mongodb::Client as MongoClient;
+
+pub struct MongoClientKey;
+
+impl TypeMapKey for MongoClientKey {
+    type Value = MongoClient;
+}
 
 struct Handler {}
 
@@ -27,6 +40,41 @@ impl client::EventHandler for Handler {
     async fn ready(&self, _ctx: client::Context, _ready: Ready) {
         println!("Working");
     }
+}
+
+// MODERATION COMMANDS
+#[poise::command(
+    slash_command,
+    prefix_command,
+    help_text_fn = "help_kick",
+    guild_only,
+    required_permissions = "KICK_MEMBERS"
+)]
+async fn kick(
+    ctx: utils::utils::Context<'_>,
+    #[description = "Offendor"]
+    #[rename = "criminal"]
+    user: User,
+    #[description = "Reason?"]
+    #[rest]
+    reason: String,
+) -> Result<(), utils::utils::Error> {
+    println!("Type of ctx.data(): {}", type_name::<_>(ctx.data()));
+
+
+    let guild = ctx.guild().context("Failed to fetch guild")?.clone();
+    guild.kick_with_reason(ctx.http(), &user, &reason).await?;
+    ctx.say(format!("**Kicked** user {}. Reason: {}", &user, &reason))
+        .await?;
+    Ok(())
+}
+
+fn help_kick() -> String {
+    String::from(
+        "\
+Example usage:
+uwu kick @<mention> <reason>",
+    )
 }
 
 #[poise::command(slash_command, prefix_command)]
@@ -92,17 +140,20 @@ async fn randomanime(ctx: utils::utils::Context<'_>) -> Result<(), utils::utils:
 }
 
 #[tokio::main]
-async fn main() {
+async fn main()  {
     dotenv().ok();
     // Initialize the bot with your Discord bot token
+
+    let uri = std::env::var("DATABASE_URL").expect("No database url");
+    let mongo = MongoClient::with_uri_str(uri).await.expect("Error while connecting");
+
+
     let token = std::env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
-    let intents = GatewayIntents::GUILD_MESSAGES
-        | GatewayIntents::DIRECT_MESSAGES
-        | GatewayIntents::MESSAGE_CONTENT;
+    let intents = GatewayIntents::all();
 
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
-            commands: vec![age(), randomanime()],
+            commands: vec![age(), randomanime(), kick()],
             prefix_options: poise::PrefixFrameworkOptions {
                 prefix: Some("uwu".into()),
                 case_insensitive_commands: true,
@@ -112,7 +163,8 @@ async fn main() {
         })
         .setup(|ctx, _ready, framework| {
             Box::pin(async move {
-                poise::builtins::register_globally(ctx, &framework.options().commands).await?;
+                builtins::register_globally(ctx, &framework.options().commands).await?;
+                ctx.data.write().await.insert::<MongoClientKey>(mongo);
                 Ok(utils::utils::Data {})
             })
         })
@@ -124,5 +176,6 @@ async fn main() {
         .framework(framework)
         .event_handler(Handler::new())
         .await;
+
     client.unwrap().start().await.unwrap();
 }

@@ -19,3 +19,8 @@ poise = "0.6.1"
 chrono = "0.4.35"
 anyhow = "1.0.81"
 
+[dependencies.mongodb]
+version = "2.8.0"
+features = ["tokio-runtime"]
+
+
