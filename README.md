@@ -1,6 +1,6 @@
 ## crabby
 
-made as an attempt to run rust
+made as an attempt to run rust. made thinking this is only for 1 server. 
 
 ### Todo
 
@@ -9,8 +9,9 @@ made as an attempt to run rust
     - [x] Kick 
     - [ ] Mute
     - [ ] Warns
+    - [x] Offenses
 - [ ] Misc
-    - [ ] Server Info 
+    - [x] Server Info 
     - [ ] Avatar
 - [ ] Fun
     - [ ] Ship

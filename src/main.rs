@@ -3,6 +3,7 @@ use dotenv::dotenv;
 mod utils {
     pub mod utils; // Import from the utils.rs file
 }
+use futures::TryStreamExt;
 use poise::async_trait;
 use poise::serenity_prelude as serenity;
 use poise::serenity_prelude::User;
@@ -40,12 +41,12 @@ impl Handler {
 
 #[async_trait]
 impl client::EventHandler for Handler {
-    async fn ready(&self, _ctx: client::Context, _ready: Ready) {
-        println!("Working");
+    async fn ready(&self, _ctx: client::Context, ready: Ready) {
+        println!("Working as {}", ready.user.tag());
     }
 }
 
-// MODERATION COMMANDS
+// // MODERATION COMMANDS
 
 // KICK
 #[poise::command(
@@ -55,7 +56,7 @@ impl client::EventHandler for Handler {
     guild_only,
     required_permissions = "KICK_MEMBERS"
 )]
-async fn kick(
+async fn kwick(
     ctx: utils::utils::Context<'_>,
     #[description = "Offendor"]
     #[rename = "criminal"]
@@ -143,7 +144,7 @@ uwu ban @<mention> <reason>",
     guild_only,
     required_permissions = "BAN_MEMBERS"
 )]
-async fn unban(
+async fn unbwan(
     ctx: utils::utils::Context<'_>,
     #[description = "Rehabed person?"]
     #[rename = "good_person"]
@@ -172,6 +173,57 @@ uwu unban <userid>",
     )
 }
 
+// OFFENCES
+#[poise::command(
+    slash_command,
+    prefix_command,
+    help_text_fn = "help_unban",
+    guild_only,
+    required_permissions = "BAN_MEMBERS"
+)]
+async fn ofwences(
+    ctx: utils::utils::Context<'_>,
+    #[description = "Selected user"] user: Option<serenity::User>,
+) -> Result<(), utils::utils::Error> {
+    let offenses = match get_user_offenses(user.expect("NO USER").clone(), ctx.clone()).await {
+        Ok(offenses) => offenses,
+        Err(err) => {
+            ctx.say("Error fetching offenses").await?;
+            return Err(err);
+        }
+    };
+
+    let mut embed = CreateEmbed::default().title("USER OFFENCES");
+    let mut m = CreateEmbed::default();
+    // Loop through offenses and add fields to the embed
+    if !offenses.is_empty() {
+        for offense in offenses {
+            let offense_type = offense.get_str("type").unwrap_or("Unknown Type");
+            let reason = offense.get_str("reason").unwrap_or("No reason provided");
+            let responsible_mod = offense
+                .get_str("responsible_mod")
+                .unwrap_or("Unknown Moderator");
+
+            embed = embed.field(
+                offense_type,
+                format!("**Reason:** {}\n**Moderator:** {}", reason, responsible_mod),
+                true,
+            );
+
+            m = embed.clone();
+        }
+
+        let builder = poise::CreateReply::default().embed(m);
+        ctx.send(builder).await?;
+    } else {
+        ctx.say("User Is Clean").await?;
+    }
+
+    Ok(())
+}
+
+// // MISC COMMANDS
+
 #[poise::command(slash_command, prefix_command)]
 async fn age(
     ctx: utils::utils::Context<'_>,
@@ -183,8 +235,31 @@ async fn age(
     Ok(())
 }
 
+#[poise::command(slash_command, prefix_command, guild_only)]
+async fn sweverwinfo(ctx: utils::utils::Context<'_>) -> Result<(), utils::utils::Error> {
+    let guild = ctx.guild().context("Failed to fetch guild")?.to_owned();
+    let icon_url = guild
+        .icon_url()
+        .map(|url| url.to_string())
+        .unwrap_or_default();
+
+    let mut embed = CreateEmbed::default()
+        .title(&guild.name)
+        .image(icon_url)
+        .color(Colour::BLURPLE);
+
+    embed = embed.field("Members", guild.members.len().to_string(), true);
+    embed = embed.field("Channels", guild.channels.len().to_string(), true);
+    embed = embed.field("Roles", guild.roles.len().to_string(), true);
+    embed = embed.field("ID", guild.id.to_string(), false);
+    let builder = poise::CreateReply::default().embed(embed);
+    let _msg = ctx.send(builder).await?;
+    Ok(())
+}
+
+// // FUN COMMANDS
 #[poise::command(slash_command, prefix_command)]
-async fn randomanime(ctx: utils::utils::Context<'_>) -> Result<(), utils::utils::Error> {
+async fn wandomanime(ctx: utils::utils::Context<'_>) -> Result<(), utils::utils::Error> {
     let client = Client::new();
     let response = client
         .get("https://api.jikan.moe/v4/random/anime")
@@ -251,7 +326,15 @@ async fn main() {
 
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
-            commands: vec![age(), randomanime(), kick(), ban(), unban()],
+            commands: vec![
+                age(),
+                wandomanime(),
+                kwick(),
+                ban(),
+                unbwan(),
+                ofwences(),
+                sweverwinfo(),
+            ],
             prefix_options: poise::PrefixFrameworkOptions {
                 prefix: Some("uwu".into()),
                 case_insensitive_commands: true,
@@ -307,4 +390,27 @@ async fn create_mod_action_in_database(
     };
 
     let _ = collection.insert_one(document, None).await;
+}
+
+async fn get_user_offenses(
+    user: User,
+    ctx: utils::utils::Context<'_>,
+) -> Result<Vec<Document>, utils::utils::Error> {
+    let db = ctx.data().mongo.clone();
+    let client_ref: &MongoClient = db.as_ref();
+    let db_ref = client_ref.database("crabby");
+    let collection: Collection<Document> = db_ref.collection("ModNotes");
+
+    let mut cursor = collection.find(doc! { "user": user.tag() }, None).await;
+    let mut current_presents: Vec<Document> = Vec::new();
+
+    while let Ok(cursor) = &mut cursor {
+        if let Some(doc) = cursor.try_next().await? {
+            current_presents.push(doc);
+        } else {
+            break; // No more documents in the cursor, exit the loop
+        }
+    }
+
+    Ok(current_presents)
 }
