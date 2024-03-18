@@ -10,6 +10,7 @@ use poise::serenity_prelude::User;
 
 use mongodb::bson::doc;
 use mongodb::bson::Document;
+use mongodb::error::Error as MongoError;
 use mongodb::Client as MongoClient;
 use mongodb::Collection;
 use poise::builtins;
@@ -252,13 +253,14 @@ async fn ofwences(
     if !offenses.is_empty() {
         for offense in offenses {
             let offense_type = offense.get_str("type").unwrap_or("Unknown Type");
+            let serial = offense.get_str("serial").unwrap_or("Unknown Serial");
             let reason = offense.get_str("reason").unwrap_or("No reason provided");
             let responsible_mod = offense
                 .get_str("responsible_mod")
                 .unwrap_or("Unknown Moderator");
 
             embed = embed.field(
-                offense_type,
+                format!("{} | #{}", offense_type, serial),
                 format!("**Reason:** {}\n**Moderator:** {}", reason, responsible_mod),
                 true,
             );
@@ -452,8 +454,7 @@ async fn main() {
     client.unwrap().start().await.unwrap();
 }
 
-async fn create_mod_action_in_database(
-    action: String,
+async fn create_mod_note_in_database(
     user: User,
     reason: String,
     ctx: utils::utils::Context<'_>,
@@ -468,12 +469,63 @@ async fn create_mod_action_in_database(
     let mod_info = format!("{}", ctx.author().tag());
     let reason_str = reason.to_string();
 
+    let count = match collection.count_documents(None, None).await {
+        Ok(count) => count,
+        Err(err) => {
+            // Handle the error, for example, by printing an error message
+            eprintln!("Failed to count documents: {}", err);
+            return;
+        }
+    };
+
+    let counter = count + 1;
+
+    let document = doc! {
+        "user": user_info,
+        "note": reason_str,
+        "at": current_time.to_rfc3339(),
+        "responsible_mod": mod_info,
+        "serial" : counter.to_string(),
+        "guild": guild_id
+    };
+
+    let _ = collection.insert_one(document, None).await;
+}
+
+async fn create_mod_action_in_database(
+    action: String,
+    user: User,
+    reason: String,
+    ctx: utils::utils::Context<'_>,
+    guild_id: String,
+) {
+    let db = ctx.data().mongo.clone();
+    let client_ref: &MongoClient = db.as_ref();
+    let db_ref = client_ref.database("crabby");
+    let collection: Collection<Document> = db_ref.collection("ModOffenses");
+    let current_time = Utc::now();
+    let user_info = format!("{}", user.tag());
+    let mod_info = format!("{}", ctx.author().tag());
+    let reason_str = reason.to_string();
+
+    let count = match collection.count_documents(None, None).await {
+        Ok(count) => count,
+        Err(err) => {
+            // Handle the error, for example, by printing an error message
+            eprintln!("Failed to count documents: {}", err);
+            return;
+        }
+    };
+
+    let counter = count + 1;
+
     let document = doc! {
         "type": action,
         "user": user_info,
         "reason": reason_str,
         "at": current_time.to_rfc3339(),
         "responsible_mod": mod_info,
+        "serial" : counter.to_string(),
         "guild": guild_id
     };
 
