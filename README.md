@@ -6,14 +6,10 @@ edit: i still know jackshit about rust
 
 ### Todo
 
-- [ ] Moderation
+- [x] Moderation
     - [x] Ban / Unban 
     - [x] Kick 
     - [x] Warns
-    - [ ] Roles
-        - [ ] Give Role 
-        - [ ] Take Role 
-        - [ ] Delete Role
     - [x] Offenses
         - [x] Make Offenses 
         - [x] Delete Offenses
@@ -21,7 +17,6 @@ edit: i still know jackshit about rust
     - [x] Server Info 
     - [x] Avatar
 - [ ] Fun
-    - [ ] Ship
-    - [ ] Random Anime 
-    - [ ] Random Anime
+    - [ ] Random Meme 
+    - [x] Random Anime
 

@@ -432,6 +432,44 @@ async fn wandomanime(ctx: utils::utils::Context<'_>) -> Result<(), utils::utils:
     Ok(())
 }
 
+#[poise::command(slash_command, prefix_command)]
+async fn wandomweme(ctx: utils::utils::Context<'_>) -> Result<(), utils::utils::Error> {
+    let client = Client::new();
+    let response = client.get("https://meme-api.com/gimme").send().await;
+    match response {
+        Ok(res) => {
+            let body = res.bytes().await;
+
+            let mut b = String::new();
+
+            let body_str = String::from_utf8(body.expect("Reason").to_vec());
+
+            match body_str {
+                Ok(str) => {
+                    b = str;
+                }
+                Err(_err) => {}
+            }
+            let meme_data: Value = serde_json::from_str(&b).unwrap();
+
+            let image_url = meme_data["url"].as_str().unwrap_or("Unknown Title");
+            let image_title = meme_data["title"].as_str().unwrap_or("Unknown Title");
+
+            let embed = CreateEmbed::new()
+                .image(image_url)
+                .color(Colour::BLURPLE)
+                .title(image_title);
+
+            let builder = poise::CreateReply::default().embed(embed);
+            let _msg = ctx.send(builder).await?;
+        }
+        Err(_) => {
+            let _ = ctx.say("Failed to fetch anime data.");
+        }
+    }
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() {
     dotenv().ok();
@@ -455,6 +493,7 @@ async fn main() {
                 kwick(),
                 ban(),
                 unbwan(),
+                wandomweme(),
                 ofwences(),
                 rewmoveofwence(),
                 sweverwinfo(),
