@@ -8,7 +8,7 @@ made as an attempt to run rust. made thinking this is only for 1 server.
     - [x] Ban / Unban 
     - [x] Kick 
     - [ ] Mute
-    - [ ] Warns
+    - [x] Warns
     - [x] Offenses
 - [ ] Misc
     - [x] Server Info 

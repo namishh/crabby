@@ -65,12 +65,14 @@ async fn kwick(
     #[rest]
     reason: String,
 ) -> Result<(), utils::utils::Error> {
+    let guild = ctx.guild().context("Failed to fetch guild")?.clone();
     if ctx.author() != &user {
         create_mod_action_in_database(
             "KICK".to_string(),
             user.clone(),
             reason.clone(),
             ctx.clone(),
+            guild.id.to_string(),
         )
         .await;
         let guild = ctx.guild().context("Failed to fetch guild")?.clone();
@@ -86,6 +88,47 @@ fn help_kick() -> String {
         "\
 Example usage:
 uwu kick @<mention> <reason>",
+    )
+}
+
+// WARN
+#[poise::command(
+    slash_command,
+    prefix_command,
+    help_text_fn = "help_warn",
+    guild_only,
+    required_permissions = "KICK_MEMBERS"
+)]
+async fn warn(
+    ctx: utils::utils::Context<'_>,
+    #[description = "Offendor"]
+    #[rename = "criminal"]
+    user: User,
+    #[description = "Reason?"]
+    #[rest]
+    reason: String,
+) -> Result<(), utils::utils::Error> {
+    let guild = ctx.guild().context("Failed to fetch guild")?.clone();
+    if ctx.author() != &user {
+        create_mod_action_in_database(
+            "WARN".to_string(),
+            user.clone(),
+            reason.clone(),
+            ctx.clone(),
+            guild.id.to_string(),
+        )
+        .await;
+        ctx.say(format!("**Warned** user {}. Reason: {}", &user, &reason))
+            .await?;
+    }
+    Ok(())
+}
+
+fn help_warn() -> String {
+    String::from(
+        "\
+Example usage:
+uwu warn @<mention> <reason>",
     )
 }
 
@@ -111,9 +154,15 @@ async fn ban(
     reason: String,
 ) -> Result<(), utils::utils::Error> {
     if ctx.author() != &user {
-        create_mod_action_in_database("BAN".to_string(), user.clone(), reason.clone(), ctx.clone())
-            .await;
         let guild = ctx.guild().context("Failed to fetch guild")?.clone();
+        create_mod_action_in_database(
+            "BAN".to_string(),
+            user.clone(),
+            reason.clone(),
+            ctx.clone(),
+            guild.id.to_string(),
+        )
+        .await;
         guild
             .ban_with_reason(
                 ctx.http(),
@@ -151,11 +200,13 @@ async fn unbwan(
     user: User,
 ) -> Result<(), utils::utils::Error> {
     if ctx.author() != &user {
+        let guild = ctx.guild().context("Failed to fetch guild")?.to_owned();
         create_mod_action_in_database(
             "UNBAN".to_string(),
             user.clone(),
             "Unbanned".to_string(),
             ctx.clone(),
+            guild.id.to_string(),
         )
         .await;
         let guild = ctx.guild().context("Failed to fetch guild")?.to_owned();
@@ -184,16 +235,18 @@ uwu unban <userid>",
 async fn ofwences(
     ctx: utils::utils::Context<'_>,
     #[description = "Selected user"] user: Option<serenity::User>,
+    #[description = "Type? (ALL/WARN/KICK/BAN/UNBAN)"] typ: String,
 ) -> Result<(), utils::utils::Error> {
-    let offenses = match get_user_offenses(user.expect("NO USER").clone(), ctx.clone()).await {
-        Ok(offenses) => offenses,
-        Err(err) => {
-            ctx.say("Error fetching offenses").await?;
-            return Err(err);
-        }
-    };
+    let offenses =
+        match get_user_offenses(user.expect("NO USER").clone(), ctx.clone(), typ.clone()).await {
+            Ok(offenses) => offenses,
+            Err(err) => {
+                ctx.say("Error fetching offenses").await?;
+                return Err(err);
+            }
+        };
 
-    let mut embed = CreateEmbed::default().title("USER OFFENCES");
+    let mut embed = CreateEmbed::default().title(format!("USER OFFENCES | {}", typ.to_uppercase()));
     let mut m = CreateEmbed::default();
     // Loop through offenses and add fields to the embed
     if !offenses.is_empty() {
@@ -255,6 +308,37 @@ async fn sweverwinfo(ctx: utils::utils::Context<'_>) -> Result<(), utils::utils:
     let builder = poise::CreateReply::default().embed(embed);
     let _msg = ctx.send(builder).await?;
     Ok(())
+}
+
+#[poise::command(
+    slash_command,
+    prefix_command,
+    guild_only,
+    help_text_fn = "help_awatar"
+)]
+async fn awatar(
+    ctx: utils::utils::Context<'_>,
+    #[description = "Selected user"] user: Option<serenity::User>,
+) -> Result<(), utils::utils::Error> {
+    let user = user.as_ref().unwrap_or_else(|| ctx.author());
+    let icon_url = user
+        .avatar_url()
+        .unwrap_or_else(|| user.default_avatar_url());
+    let embed = CreateEmbed::default()
+        .title(&user.tag())
+        .image(icon_url)
+        .color(Colour::BLURPLE);
+    let builder = poise::CreateReply::default().embed(embed);
+    let _msg = ctx.send(builder).await?;
+    Ok(())
+}
+
+fn help_awatar() -> String {
+    String::from(
+        "\
+Example usage:
+uwu awatar @<mention>",
+    )
 }
 
 // // FUN COMMANDS
@@ -334,6 +418,8 @@ async fn main() {
                 unbwan(),
                 ofwences(),
                 sweverwinfo(),
+                awatar(),
+                warn(),
             ],
             prefix_options: poise::PrefixFrameworkOptions {
                 prefix: Some("uwu".into()),
@@ -371,6 +457,7 @@ async fn create_mod_action_in_database(
     user: User,
     reason: String,
     ctx: utils::utils::Context<'_>,
+    guild_id: String,
 ) {
     let db = ctx.data().mongo.clone();
     let client_ref: &MongoClient = db.as_ref();
@@ -387,6 +474,7 @@ async fn create_mod_action_in_database(
         "reason": reason_str,
         "at": current_time.to_rfc3339(),
         "responsible_mod": mod_info,
+        "guild": guild_id
     };
 
     let _ = collection.insert_one(document, None).await;
@@ -395,13 +483,30 @@ async fn create_mod_action_in_database(
 async fn get_user_offenses(
     user: User,
     ctx: utils::utils::Context<'_>,
+    typ: String,
 ) -> Result<Vec<Document>, utils::utils::Error> {
     let db = ctx.data().mongo.clone();
     let client_ref: &MongoClient = db.as_ref();
     let db_ref = client_ref.database("crabby");
     let collection: Collection<Document> = db_ref.collection("ModNotes");
+    let guild = ctx.guild().context("Failed to fetch guild")?.clone();
 
-    let mut cursor = collection.find(doc! { "user": user.tag() }, None).await;
+    let mut cursor: Result<mongodb::Cursor<Document>, mongodb::error::Error>;
+    if !typ.is_empty() && typ.to_uppercase() != "ALL" {
+        cursor = collection
+            .find(
+                doc! { "user": user.tag(), "guild": guild.id.to_string(), "type": typ.to_uppercase() },
+                None,
+            )
+            .await;
+    } else {
+        cursor = collection
+            .find(
+                doc! { "user": user.tag(), "guild": guild.id.to_string() },
+                None,
+            )
+            .await;
+    }
     let mut current_presents: Vec<Document> = Vec::new();
 
     while let Ok(cursor) = &mut cursor {
