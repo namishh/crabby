@@ -10,7 +10,6 @@ use poise::serenity_prelude::User;
 
 use mongodb::bson::doc;
 use mongodb::bson::Document;
-use mongodb::error::Error as MongoError;
 use mongodb::Client as MongoClient;
 use mongodb::Collection;
 use poise::builtins;
@@ -229,7 +228,6 @@ uwu unban <userid>",
 #[poise::command(
     slash_command,
     prefix_command,
-    help_text_fn = "help_unban",
     guild_only,
     required_permissions = "BAN_MEMBERS"
 )]
@@ -238,14 +236,20 @@ async fn ofwences(
     #[description = "Selected user"] user: Option<serenity::User>,
     #[description = "Type? (ALL/WARN/KICK/BAN/UNBAN)"] typ: String,
 ) -> Result<(), utils::utils::Error> {
-    let offenses =
-        match get_user_offenses(user.expect("NO USER").clone(), ctx.clone(), typ.clone()).await {
-            Ok(offenses) => offenses,
-            Err(err) => {
-                ctx.say("Error fetching offenses").await?;
-                return Err(err);
-            }
-        };
+    let offenses = match get_user_offenses(
+        user.expect("NO USER").clone(),
+        ctx.clone(),
+        typ.clone(),
+        "ModOffenses",
+    )
+    .await
+    {
+        Ok(offenses) => offenses,
+        Err(err) => {
+            ctx.say("Error fetching offenses").await?;
+            return Err(err);
+        }
+    };
 
     let mut embed = CreateEmbed::default().title(format!("USER OFFENCES | {}", typ.to_uppercase()));
     let mut m = CreateEmbed::default();
@@ -272,6 +276,39 @@ async fn ofwences(
         ctx.send(builder).await?;
     } else {
         ctx.say("User Is Clean").await?;
+    }
+
+    Ok(())
+}
+
+// Remove Offense
+#[poise::command(
+    slash_command,
+    prefix_command,
+    guild_only,
+    required_permissions = "BAN_MEMBERS"
+)]
+async fn rewmoveofwence(
+    ctx: utils::utils::Context<'_>,
+    #[description = "#id of offense"] offense_id: String,
+) -> Result<(), utils::utils::Error> {
+    let db = ctx.data().mongo.clone();
+    let client_ref: &MongoClient = db.as_ref();
+    let db_ref = client_ref.database("crabby");
+    let collection: Collection<Document> = db_ref.collection("ModOffenses");
+
+    let filter = doc! { "serial": offense_id };
+
+    // Delete the document matching the filter
+    match collection.delete_one(filter, None).await {
+        Ok(_) => {
+            ctx.reply("Offense removed successfully").await?;
+        }
+        Err(err) => {
+            ctx.reply("No Such Offense").await?;
+            eprintln!("Failed to remove offense: {}", err);
+            return Err(err.into());
+        }
     }
 
     Ok(())
@@ -419,6 +456,7 @@ async fn main() {
                 ban(),
                 unbwan(),
                 ofwences(),
+                rewmoveofwence(),
                 sweverwinfo(),
                 awatar(),
                 warn(),
@@ -452,44 +490,6 @@ async fn main() {
         .await;
 
     client.unwrap().start().await.unwrap();
-}
-
-async fn create_mod_note_in_database(
-    user: User,
-    reason: String,
-    ctx: utils::utils::Context<'_>,
-    guild_id: String,
-) {
-    let db = ctx.data().mongo.clone();
-    let client_ref: &MongoClient = db.as_ref();
-    let db_ref = client_ref.database("crabby");
-    let collection: Collection<Document> = db_ref.collection("ModNotes");
-    let current_time = Utc::now();
-    let user_info = format!("{}", user.tag());
-    let mod_info = format!("{}", ctx.author().tag());
-    let reason_str = reason.to_string();
-
-    let count = match collection.count_documents(None, None).await {
-        Ok(count) => count,
-        Err(err) => {
-            // Handle the error, for example, by printing an error message
-            eprintln!("Failed to count documents: {}", err);
-            return;
-        }
-    };
-
-    let counter = count + 1;
-
-    let document = doc! {
-        "user": user_info,
-        "note": reason_str,
-        "at": current_time.to_rfc3339(),
-        "responsible_mod": mod_info,
-        "serial" : counter.to_string(),
-        "guild": guild_id
-    };
-
-    let _ = collection.insert_one(document, None).await;
 }
 
 async fn create_mod_action_in_database(
@@ -536,11 +536,12 @@ async fn get_user_offenses(
     user: User,
     ctx: utils::utils::Context<'_>,
     typ: String,
+    base: &str,
 ) -> Result<Vec<Document>, utils::utils::Error> {
     let db = ctx.data().mongo.clone();
     let client_ref: &MongoClient = db.as_ref();
     let db_ref = client_ref.database("crabby");
-    let collection: Collection<Document> = db_ref.collection("ModNotes");
+    let collection: Collection<Document> = db_ref.collection(&base);
     let guild = ctx.guild().context("Failed to fetch guild")?.clone();
 
     let mut cursor: Result<mongodb::Cursor<Document>, mongodb::error::Error>;

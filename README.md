@@ -1,24 +1,27 @@
 ## crabby
 
-made as an attempt to run rust. made thinking this is only for 1 server. 
+made as an attempt to learn rust. made thinking this is only for 1 server. not a serious project by any means
+
+edit: i still know jackshit about rust
 
 ### Todo
 
 - [ ] Moderation
     - [x] Ban / Unban 
     - [x] Kick 
-    - [ ] Mute
     - [x] Warns
-    - [ ] Offenses
+    - [ ] Roles
+        - [ ] Give Role 
+        - [ ] Take Role 
+        - [ ] Delete Role
+    - [x] Offenses
         - [x] Make Offenses 
-        - [ ] Delete Offenses
+        - [x] Delete Offenses
 - [x] Misc
     - [x] Server Info 
     - [x] Avatar
 - [ ] Fun
     - [ ] Ship
-    - [ ] Memes
-    - [ ] Anime
-        - [ ] Random Anime
-        - [ ] Info About Specific Anime
+    - [ ] Random Anime 
+    - [ ] Random Anime
 
