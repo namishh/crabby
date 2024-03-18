@@ -16,7 +16,7 @@ edit: i still know jackshit about rust
 - [x] Misc
     - [x] Server Info 
     - [x] Avatar
-- [ ] Fun
-    - [ ] Random Meme 
+- [x] Fun
+    - [x] Random Meme 
     - [x] Random Anime
 
