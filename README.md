@@ -9,10 +9,12 @@ made as an attempt to run rust. made thinking this is only for 1 server.
     - [x] Kick 
     - [ ] Mute
     - [x] Warns
-    - [x] Offenses
-- [ ] Misc
+    - [ ] Offenses
+        - [x] Make Offenses 
+        - [ ] Delete Offenses
+- [x] Misc
     - [x] Server Info 
-    - [ ] Avatar
+    - [x] Avatar
 - [ ] Fun
     - [ ] Ship
     - [ ] Memes
